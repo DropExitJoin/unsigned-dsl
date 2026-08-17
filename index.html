@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unsigned DSL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/theme/dracula.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/codemirror.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/addon/hint/show-hint.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/addon/hint/show-hint.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/addon/dialog/dialog.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/addon/dialog/dialog.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/addon/search/searchcursor.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.20/addon/search/search.min.js"></script>
+<style>
+	:root{
+		--bg:            #0b0f14;
+		--panel:         #10151c;
+		--panel-edge:    #1c2531;
+		--ink:           #d8e2ea;
+		--ink-dim:       #6b7f92;
+		--diamond:       #55d6ee;
+		--diamond-dim:   #1f4a55;
+		--amber:         #f0a63c;
+		--err:           #ff6b6b;
+		--ok:            #6bdc8f;
+		--mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		--disp: 'Space Grotesk', var(--mono);
+	}
+	*{box-sizing:border-box;}
+	html,body{height:100%;}
+	body{
+		margin:0;
+		background: var(--bg);
+		color:var(--ink);
+		font-family:var(--mono);
+		display:flex;
+		flex-direction:column;
+		height:100vh;
+		overflow:hidden;
+	}
+
+	body, textarea {
+		font-variant-ligatures: none;
+	}
+
+	header{
+		padding:6px 14px;
+		border-bottom:1px solid var(--panel-edge);
+	}
+	header .mark{
+		font-size:15px;
+	}
+
+	#aiPromptBtn {
+		margin-left: 50px;
+	}
+
+	main{
+		flex:1;
+		min-height:0;
+		display:grid;
+		grid-template-columns:2.5fr 1fr;
+		gap:2px;
+		padding:10px;
+	}
+
+	.pane{
+		display:flex;
+		flex-direction:column;
+		min-height:0;
+		min-width:0;
+	}
+	.pane .pane-head{
+		padding:4px 10px 6px;
+		display:flex;
+		align-items:center;
+		justify-content:space-between;
+	}
+	
+	.flowbtn{
+		padding:6px 8px;
+		border:1px solid var(--diamond);
+		border-radius:6px;
+		background:var(--panel);
+		color:var(--diamond);
+		cursor:pointer;
+		font:inherit;
+	}
+	.flowbtn:hover{
+		background:rgba(85,214,238,.15);
+		border-color:var(--diamond);
+	}
+	
+	.flowbtn:active {
+		background:rgba(85,214,238,.25);
+		transform: scale(0.97);
+	}
+
+	.pane .pane-title{
+		font-family:var(--disp);
+		font-size:13px;
+		font-weight:600;
+		letter-spacing:0.1em;
+		text-transform:uppercase;
+		color:var(--ink-dim);
+	}
+	.pane .pane-title b{ color:var(--ink); }
+	.pane textarea{
+		flex:1;
+		margin:0 10px 10px;
+		background:var(--panel);
+		border:1px solid var(--panel-edge);
+		border-radius:8px;
+		color:var(--ink);
+		font-family:var(--mono);
+		font-size:13px;
+		line-height:1.6;
+		padding:16px 18px;
+		resize:none;
+		white-space:pre;
+		overflow:auto;
+	}
+	.pane textarea::placeholder{ color:#7d8c9a; }
+
+	.log{
+		margin:0 22px 20px;
+		max-height:150px;
+		overflow-y:auto;
+		background:#0a0d12;
+		border:1px solid var(--panel-edge);
+		border-radius:8px;
+		padding:10px 14px;
+		font-size:12px;
+		line-height:1.65;
+		display:none;
+	}
+	.log.show{ display:block; }
+	.log .line{ white-space:pre-wrap; word-break:break-word; }
+	.log .line.err{ color:var(--err); }
+	.log .line.ok{ color:var(--ok); }
+	.log .line.info{ color:var(--ink-dim); }
+	#bundleOutput{
+		flex: 0 0 150px;
+	}
+	.CodeMirror{
+		flex:1;
+		margin:0 10px 10px;
+		border:1px solid var(--panel-edge);
+		border-radius:8px;
+		font-family:var(--mono);
+		font-size:13px;
+		background:var(--panel);
+		color:var(--ink);
+		font-variant-ligatures: none;
+		font-feature-settings: "liga" 0, "calt" 0;
+	}
+
+	.CodeMirror-hints{
+		font-family: var(--mono);
+		font-size: 13px;
+		background: var(--panel);
+		border: 1px solid var(--panel-edge);
+		color: var(--ink);
+	}
+	.CodeMirror-hints li.CodeMirror-hint{
+		color: var(--ink);
+		background: transparent;
+		padding: 4px 10px;
+	}
+	.CodeMirror-hints li.CodeMirror-hint-active,
+	.CodeMirror-hints li.CodeMirror-hint-active.CodeMirror-hint{
+		background: var(--diamond-dim);
+		color: var(--diamond);
+	}
+	
+	.cm-block {
+		color: #ffffff;
+	}
+
+	.cm-action {
+		color: #93d8c9;
+	}
+
+	.cm-target {
+		color: #d1a3ee;
+	}
+
+	.cm-contents {
+		color: #9dc0f9;
+	}
+
+	.cm-tags {
+		color: #ffda9d;
+	}
+
+	.cm-separator {
+		color: #c0c0c0;
+	}
+
+	.cm-error-line{
+		background:rgba(255,0,0,.18);
+	}
+
+	.error-marker {
+		color: #ff5555;
+		cursor: help;
+		font-size: 15px;
+		font-weight: bold;
+		text-align: center;
+	}
+
+	.CodeMirror-gutter.error-gutter {
+		width: 18px;
+	}
+</style>
+</head>
+<body>
+
+<header>
+	<div class="mark">
+		<span class="facet"></span>Unsigned DSL (Code ⇄ Template) v1.0.0
+		<button class="flowbtn" id="aiPromptBtn">AI prompt .txt</button>
+	</div>
+</header>
+
+<main>
+	<section class="pane">
+	<div class="pane-head">
+		<div class="pane-title"><b>DSL code</b></div>
+		<select class="pane-title" id="limitSizeSelect" style="color-scheme: dark; color: var(--ink);">
+			<option value="50">Limit: Basic (50)</option>
+			<option value="100">Limit: Large (100)</option>
+			<option value="300" selected>Limit: Massive (300)</option>
+		</select>
+		<button class="flowbtn" id="downloadCodeBtn">Download .txt</button>
+		<button class="flowbtn" id="toBundleBtn">To Item →</button>
+	</div>
+	<textarea id="codeInput" spellcheck="false" wrap="off">
+event;Join;;;
+	player_action;SendMessage;AllPlayers;[{"StyledText":"&lt;green&gt;%player joined the game!"}];
+	start_process;myEndlessLoop;;;
+	set_var;RandomNumber;;["line@randomgen",1,40];
+	call_func;compressDiamonds;;["line@randomgen"];
+	if_game;HasPlayer!;;["AI"];
+		player_action;SendTitle;;["...",{"StyledText":"&lt;gradient:red:gold&gt;AI isnt playing for now"},50,0,20];
+
+process;myEndlessLoop;;;
+	repeat;Forever;;;
+		control;Wait;;[1];{"Time Unit":"Seconds"}
+		player_action;ActionBar;;["Normal string, %var(lastTs) last unix ts someone got diamonds"];
+		set_var;StyledText;;["line@mySuffix",{"StyledText":"&lt;space&gt;&lt;green&gt;"},"g_val@Ping.Default","ms"];
+		player_action;SetNamePrefix;;["line@mySuffix"];{"Text Type":"Suffix"}
+
+func;compressDiamonds;;["*amount:num=1"];
+	if_var;&lt;;;["line@amount",9];
+		player_action;GiveItems;;[{"Item":"{count:1,id:diamond}"},"line@amount"];
+	else;;;;
+		set_var;/;;["line@blocks","line@amount",9];{"Division Mode":"Floor result"}
+		set_var;%;;["line@diamonds","line@amount",9];
+		player_action;GiveItems;;[{"Item":"{components:{custom_name:\"Example\"},count:1,id:diamond_block}"},"line@blocks"];
+		player_action;GiveItems;;[{"Item":"{count:1,id:diamond}"},"line@diamonds"];
+	player_action;PlaySound;;[{"Sound":["Lever Click",1.2,2]}];
+	set_var;ShiftInDirection;;["line@fwdPos","g_val@Eye Location.Default",0.4];
+	player_action;Particle;;[{"Particle":{"particle":"Happy Villager","cluster":{"amount":8,"horizontal":0.3,"vertical":0.1}}},"line@fwdPos"];
+	set_var;RoundNumber;;["saved@lastTs","g_val@Timestamp.Default"];{"Round Mode":"Floor"}
+</textarea>
+	</section>
+
+	<section class="pane">
+	<div class="pane-head">
+		<button class="flowbtn" id="toCodeBtn">← To Code</button>
+		<button class="flowbtn" id="copyBundleBtn">Copy</button>
+		<button class="flowbtn" id="codeclientBtn" title="Gives bundle of templates to Minecraft, if in creative">CodeClient</button>
+		<div class="pane-title"><b>Template</b></div>
+	</div>
+		<textarea id="bundleOutput" spellcheck="false" wrap="off" placeholder="give @a cyan_bundle[bundle_contents=[...]]
+To load from game:
+Hold template or bundle, type
+/i nbt (copy unformatted NBT), paste result"></textarea>
+		<div class="log" id="bundleLog"></div>
+	<div class="log" id="codeLog"></div>
+	</section>
+</main>
+
+<div id="tooltip" style="
+position:fixed;
+display:none;
+background:#1b1f2a;
+color:#fff;
+padding:6px 8px;
+border:1px solid #ff5555;
+border-radius:6px;
+font-size:12px;
+z-index:99999;
+pointer-events:none;
+white-space:pre-wrap;
+"></div>
+
+<script>
+/* ====
+	GLOBALS
+	==== */
+
+const PROMPTCOMPRESSED = "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";
+const SUBCOMMANDBLOCKS = {"if_entity":["Exists","HasCustomTag","HasPotion","IsGrounded","IsHitboxNear","IsItem","IsMob","IsNear","IsProj","IsRiding","IsSheared","IsType","IsVehicle","NameEquals","StandingOn"],"control":["End","EndAllThreads","PrintDebug","Return","Skip","StopRepeat","Wait"],"player_action":["ActionBar","AddInvRow","AdventureMode","AttackAnimation","BlockDisguise","BoostElytra","ChatStyle","ClearDispBlock","ClearInv","ClearItems","ClearPotions","ClearScoreboard","CloseInv","CombatAttribute","CreativeMode","Damage","DisableBlocks","DisguiseShiftVert","DispHeadTexture","DisplayBellRing","DisplayBlock","DisplayBlockOpen","DisplayEquipment","DisplayFracture","DisplayGateway","DisplayHologram","DisplayLightning","DisplayPickup","DisplaySignText","EnableBlocks","ExpandInv","FaceLocation","FallingAttribute","GetItemCooldown","GiveExhaustion","GiveExp","GiveFood","GiveItems","GivePotion","GiveSaturation","Heal","HealthAttribute","HurtAnimation","InstantRespawn","KBAttribute","Kick","LaunchFwd","LaunchProj","LaunchToward","LaunchUp","LoadInv","LockDisgRotation","Mimic","MiningAttribute","MiscAttribute","MobDisguise","MovementAttribute","OpenBlockInv","OpenBook","OpenSign","OpenTradeMenu","Particle","ParticleCircle","ParticleCircleA","ParticleCuboid","ParticleCuboidA","ParticleLine","ParticleLineA","ParticleRay","ParticleSphere","ParticleSpiral","ParticleSpiralA","PlayEntitySound","PlaySound","PlaySoundSeq","PlayerDisguise","PromptPurchase","ReachAttribute","RemoveBossBar","RemoveInvRow","RemoveItems","RemovePotion","RemoveScore","ReplaceItems","ResourcePack","RideEntity","RmWorldBorder","RollbackBlocks","SaveInv","ScoreDefFormat","ScoreLineFormat","SendAdvancement","SendMessage","SendMessageSeq","SendTitle","SendToPlot","SetAbsorption","SetAirTicks","SetAllowFlight","SetAllowPVP","SetArmor","SetArrowsStuck","SetBossBar","SetChatTag","SetCollidable","SetCompass","SetCursorItem","SetDisguiseVisible","SetDropsEnabled","SetEntityHidden","SetEquipment","SetExhaustion","SetExp","SetFallDistance","SetFireTicks","SetFlying","SetFogDistance","SetFoodLevel","SetFreezeTicks","SetGliding","SetHandCrafting","SetHealth","SetHotbar","SetInvName","SetInventory","SetInventoryKept","SetInvulTicks","SetItemCooldown","SetMaxHealth","SetMenuItem","SetNameColor","SetNamePrefix","SetNameVisible","SetPlayerTime","SetPlayerWeather","SetRainLevel","SetReducedDebug","SetRotation","SetSaturation","SetScore","SetScoreObj","SetShoulder","SetSidebar","SetSkin","SetSlot","SetSlotItem","SetSpawnPoint","SetStatus","SetStingsStuck","SetTabListInfo","SetTickRate","SetVelocity","SetVisualFire","SetWorldBorder","ShiftWorldBorder","ShowInv","SpectateTarget","SpectatorCollision","SpectatorMode","StopSound","SurvivalMode","Teleport","Undisguise","WakeUpAnimation"],"event":["BreakBlock","BreakItem","ChangeSign","ChangeSlot","Chat","ClickContainerSlot","ClickEntity","ClickInvSlot","ClickMenuSlot","ClickPlayer","CloseInv","CloudImbuePlayer","Command","Consume","DamageEntity","Death","Dismount","DropItem","EntityDmgPlayer","Exhaustion","Fish","HorseJump","Join","Jump","KillMob","KillPlayer","Leave","LeftClick","LeftClickEntity","LeftClickPlayer","LoadCrossbow","MobKillPlayer","Move","MovementKey","PackDecline","PackLoad","PickBlock","PickEntity","PickUpItem","PlaceBlock","PlayerCombust","PlayerDmgPlayer","PlayerHeal","PlayerResurrect","PlayerTakeDmg","ProjDmgPlayer","ProjHit","Purchase","Respawn","RightClick","Riptide","ShootBow","ShootProjectile","Sneak","StartBreaking","StartFly","StartGlide","StartSprint","StopBreaking","StopFly","StopGlide","StopSprint","SwapHands","TameEntity","Teleport","Unsneak","VehicleJump","VillagerTrade","Walk"],"entity_event":["BlockFall","EntityCombust","EntityDeath","EntityDmg","EntityDmgEntity","EntityExplode","EntityHeal","EntityKillEntity","EntityResurrect","FallingBlockLand","ItemMerge","ProjDmgEntity","ProjKillEntity","RegrowWool","ShootBow","Teleport","Transform","VehicleDamage"],"set_var":["%","+","+=","-","-=","/","=","AbsoluteValue","AddItemAttribute","AddItemEnchant","AddItemLore","AddItemToolRule","AddVectors","AlignLoc","AlignVector","AllRegexGroups","AllRegexMatches","AppendDict","AppendList","AppendValue","ArcTangent2","Average","Base64Decode","Base64Encode","Bitwise","BlockHardness","BlockResistance","BounceNum","BytesToString","CellularNoise","ClampLoc","ClampNumber","ClampVector","ClearDict","ClearEnchants","ClearFormatting","ClearItemAttrs","ClearItemTag","ContainerLock","ContainerName","ContentLength","Cosine","CreateDict","CreateList","CrossProduct","DecimalRGB","DedupList","DestructureList","DirectionName","Distance","DotProduct","Exponent","FaceLocation","FlattenList","FormatTime","GetAllBlockData","GetAllItemTags","GetAllItems","GetBlockByMCTag","GetBlockData","GetBlockDrops","GetBlockGrowth","GetBlockPower","GetBlockShape","GetBlockSound","GetBlockType","GetBookText","GetBreakSound","GetBundleItems","GetCanDestroy","GetCanPlaceOn","GetCenterLoc","GetColorChannels","GetConsumable","GetContainerItems","GetCoord","GetCrossbowProj","GetCustomSound","GetDictKeys","GetDictSize","GetDictValue","GetDictValues","GetDirection","GetHeadOwner","GetItemAmount","GetItemAttribute","GetItemByMCTag","GetItemColor","GetItemDura","GetItemEffects","GetItemEnchants","GetItemLeftover","GetItemLore","GetItemModel","GetItemName","GetItemRarity","GetItemTag","GetItemType","GetItemWeapon","GetLecternBook","GetLecternPage","GetLight","GetListValue","GetLodestoneLoc","GetLoreLine","GetMaxAmount","GetMiniMessageExpr","GetModelDataNums","GetModelDataStrs","GetParticleAmount","GetParticleColor","GetParticleDur","GetParticleFade","GetParticleMat","GetParticleMotion","GetParticleOpac","GetParticlePower","GetParticleRoll","GetParticleSize","GetParticleSprd","GetParticleType","GetPotionAmp","GetPotionDur","GetPotionType","GetRegexGroup","GetSignText","GetSoundPitch","GetSoundType","GetSoundVariant","GetSoundVolume","GetTooltipStyle","GetValueIndex","GetVectorComp","GetVectorLength","GradientNoise","GzipCompress","GzipDecompress","HSBColor","HSLColor","HiddenComponents","IndexOfSubstring","InsertListValue","Interpolate","JoinString","JsonToValue","ListLength","Logarithm","MaxNumber","MinNumber","MultiplyVector","NamedRegexGrps","Noise","NormalRandom","ParseMiniMessage","ParseNumber","PopListValue","PurgeVars","RGBColor","RandomLoc","RandomNumber","RandomValue","RandomVector","RandomizeList","Raycast","ReflectVector","RemItemEnchant","RemoveDictEntry","RemoveItemAttrs","RemoveItemTag","RemoveListIndex","RemoveListValue","RemoveString","RepeatString","ReplaceString","ReverseList","Root","RotateAroundAxis","RotateAroundVec","RotationVector","RoundNumber","SanitizeTags","SegmentString","SetAllCoords","SetAllItemTags","SetArmorTrim","SetBookText","SetBreakSound","SetBreakability","SetBundleItems","SetCanDestroy","SetCanPlaceOn","SetCase","SetConsumable","SetCoord","SetCrossbowProj","SetCustomSound","SetDictValue","SetDirection","SetHeadTexture","SetItemAmount","SetItemColor","SetItemDura","SetItemEffects","SetItemEnchants","SetItemGlowing","SetItemHideTooltip","SetItemLeftover","SetItemLore","SetItemMaxDura","SetItemModel","SetItemName","SetItemRarity","SetItemTag","SetItemTool","SetItemType","SetItemWeapon","SetListValue","SetLodestoneLoc","SetMapTexture","SetMaxAmount","SetModelDataNums","SetModelDataStrs","SetParticleAmount","SetParticleColor","SetParticleDur","SetParticleFade","SetParticleMat","SetParticleMotion","SetParticleOpac","SetParticlePower","SetParticleRoll","SetParticleSize","SetParticleSprd","SetParticleType","SetPotionAmp","SetPotionDur","SetPotionType","SetSoundPitch","SetSoundType","SetSoundVariant","SetSoundVolume","SetTooltipStyle","SetVectorComp","SetVectorLength","ShiftAllAxes","ShiftAllDirections","ShiftInDirection","ShiftOnAxis","ShiftOnVector","ShiftRotation","ShiftToward","Sine","SortDict","SortList","SplitString","String","StringLength","StringToBytes","StyledText","SubtractVectors","SwapVectorComp","Tangent","TranslateColors","TrimList","TrimString","TrimStyledText","ValueNoise","ValueToJson","Vector","VectorBetween","WebResponse","WrapNum","x"],"entity_action":["AddVillagerTrade","ArmorStandParts","ArmorStandPose","ArmorStandSlots","AttachLead","AttackAnimation","BDisplayBlock","BlockDisguise","ClearPotions","ClrVillagerTrades","CombatAttribute","CreeperCharged","Damage","DisguiseShiftVert","DispInterpolation","DispRotAxisAngle","DispRotationEuler","DispTPDuration","DispTranslation","DisplayBillboard","DisplayBrightness","DisplayCullingSize","DisplayGlowColor","DisplayMatrix","DisplayScale","DisplayShadow","DisplayViewRange","EndCrystalBeam","Explode","FaceLocation","FallingAttribute","FoxSleeping","FrogEat","GetAllEntityTags","GetCustomTag","GivePotion","Heal","HealthAttribute","IDisplayItem","IDisplayModelType","IgniteCreeper","InteractResponse","InteractionSize","Jump","KBAttribute","LaunchFwd","LaunchProj","LaunchToward","LaunchUp","LockDisgRotation","MannequinDesc","MannequinHand","MannequinLayers","MannequinMovable","MannequinSkin","Mimic","MiscAttribute","MobDisguise","MooshroomType","MoveToLoc","MovementAttribute","PlayerDisguise","ProjectileItem","Ram","RemVillagerTrade","Remove","RemoveCustomTag","RemovePotion","RestockTrades","RideEntity","SendAnimation","SetAI","SetAbsorption","SetAge","SetAllayDancing","SetAngry","SetArmor","SetArmsRaised","SetArrowDamage","SetArrowHitSound","SetArrowNoClip","SetArrowPierce","SetAxolotlColor","SetBaby","SetBeeNectar","SetBeeStinger","SetBulletTarget","SetCarryingChest","SetCatResting","SetCatType","SetCelebrating","SetCloudRadius","SetCollidable","SetCreeperFuse","SetCreeperPower","SetCustomTag","SetDeathDrops","SetDigging","SetDragonPhase","SetDyeColor","SetEndermanBlock","SetEquipment","SetFallDistance","SetFireTicks","SetFishPattern","SetFishingTime","SetFoxLeaping","SetFoxType","SetFreezeTicks","SetFriction","SetGliding","SetGlowSquidDark","SetGlowing","SetGoatHorns","SetGoatScreaming","SetGravity","SetHealth","SetHorseJump","SetHorsePattern","SetInvisible","SetInvulTicks","SetInvulnerable","SetItem","SetLlamaColor","SetMarker","SetMaxHealth","SetMinecartBlock","SetMobSitting","SetName","SetNameColor","SetNameVisible","SetPandaGene","SetPandaOnBack","SetPandaRolling","SetPandaSadTicks","SetParrotColor","SetPersistent","SetPickupDelay","SetPose","SetProfession","SetProjSource","SetRabbitType","SetRearing","SetRiptiding","SetRotation","SetSaddle","SetSalmonType","SetSheepSheared","SetShulkerPeek","SetSilenced","SetSize","SetTarget","SetTemperature","SetTradeUses","SetVelocity","SetVexCharging","SetVillagerBiome","SetVillagerExp","SetVillagerTrade","SetVisualFire","SetWardenAnger","SetWitherInvul","SetWolfSoundType","SetWolfType","Shear","ShearSheep","SheepEat","SnifferState","SnowmanPumpkin","TDispBackground","TDisplayAlign","TDisplayLineWidth","TDisplayOpacity","TDisplaySeeThru","TDisplayShadow","TDisplayText","Tame","Teleport","Undisguise","UseItem","VillagerHeadAnim"],"game_event":["LagSlayRecover","PlotShutdown","PlotStartup"],"game_action":["ApplyTransaction","BlockDropsOff","BlockDropsOn","BoneMeal","BreakBlock","CancelEvent","ChangeSign","ClearContainer","ClearItems","CloneRegion","DiscordWebhook","Explosion","FallingBlock","FillContainer","Firework","GenerateTree","LaunchProj","Lightning","LockContainer","RemoveItems","ReplaceItems","SetBiome","SetBlock","SetBlockData","SetBlockGrowth","SetBrushableItem","SetCampfireItem","SetContainer","SetContainerName","SetEventDamage","SetEventDeathMsg","SetEventHeal","SetEventProj","SetEventSound","SetEventXP","SetExhaustion","SetFurnaceSpeed","SetHead","SetItemInSlot","SetLecternBook","SetRegion","ShulkerBullet","SignColor","SpawnArmorStand","SpawnBlockDisp","SpawnCrystal","SpawnEnderEye","SpawnExpOrb","SpawnFangs","SpawnInteraction","SpawnItem","SpawnItemDisp","SpawnMannequin","SpawnMob","SpawnPotionCloud","SpawnTNT","SpawnTextDisplay","SpawnVehicle","TickBlock","UncancelEvent","WebRequest","WriteTransaction"],"if_player":["CanFly","CursorItem","HasItem","HasPermission","HasPotion","HasRoomForItem","HasSlotItem","InWorldBorder","InvOpen","IsBlocking","IsFlying","IsGliding","IsGrounded","IsHitboxNear","IsHolding","IsInGameMode","IsLookingAt","IsNear","IsRiding","IsSneaking","IsSprinting","IsSwimming","IsUsingItem","IsWearing","MainHandEquals","MenuSlotEquals","MovementKey","NameEquals","NoItemCooldown","OwnsProduct","SlotEquals","StandingOn","UsingPack"],"if_var":["!=","<","<=","=",">",">=","BlockIsSolid","Contains","DictHasKey","DictHasKeys","DictValueEquals","EndsWith","InRange","IsFiltered","ItemEquals","ItemHasEnchant","ItemHasTag","ItemIsBlock","ItemIsUnbreakable","ListContains","ListSizeEquals","ListValueEq","LocIsNear","StartsWith","StringMatches","ValueIsEmpty","VarExists","VarIsType"],"repeat":["Adjacent","DoWhile","ForEach","ForEachEntry","Forever","Grid","Multiple","Path","Range","Sphere","While"],"select_obj":["AllEntities","AllPlayers","EntitiesCond","EntityName","EntityUUID","EventTarget","FilterCondition","FilterDistance","FilterRandom","FilterRay","FilterSort","Invert","LastEntity","PlayerName","PlayersCond","RandomPlayer","Reset"],"if_game":["AttackIsCrit","BlockEquals","BlockPowered","CmdArgEquals","CommandEquals","ContainerHas","ContainerHasAll","EventBlockEquals","EventCancelled","EventItemEquals","HasPlayer","HasRoomForItem","InBlock","IsChunkLoaded","MovementKey","SignHasTxt"]};
+const DEFAULTTAGS = {"start_process":{"Local Variables":"Don't copy","Target Mode":"With current targets"},"if_player":{"MovementKey":{"Forward (W)":"Don't check","Backward (S)":"Don't check","Left (A)":"Don't check","Right (D)":"Don't check","Jump (Space)":"Don't check","Sneak (Left Shift)":"Don't check","Sprint (Left Control)":"Don't check"},"IsLookingAt":{"Fluid Mode":"Ignore fluids"},"IsNear":{"Shape":"Sphere"},"IsHitboxNear":{"Shape":"Sphere"},"IsHolding":{"Hand Slot":"Either hand"},"HasItem":{"Check Mode":"Has Any Item"},"IsWearing":{"Check Mode":"Is Wearing Some"},"HasRoomForItem":{"Checked Slots":"Main inventory","Check Mode":"Has Room for Any Item"},"IsInGameMode":{"Game Mode":"Survival"},"HasPotion":{"Check Properties":"None","Check Mode":"Has any effect"},"IsRiding":{"Ignore Formatting":"True"},"InvOpen":{"Inventory Type":"Any Inventory"},"HasPermission":{"Permission":"Developer or builder"},"MainHandEquals":{"Main Hand":"Left Hand"}},"player_action":{"SetEquipment":{"Equipment Slot":"Main hand"},"ClearInv":{"Clear Crafting and Cursor":"True","Clear Mode":"Entire inventory"},"LoadInv":{"Code Flow":"Synchronous"},"SendMessage":{"Inherit Styles":"True","Text Value Merging":"Add spaces","Alignment Mode":"Regular"},"SendMessageSeq":{"Alignment Mode":"Regular"},"ActionBar":{"Inherit Styles":"True","Text Value Merging":"No spaces"},"SetBossBar":{"Sky Effect":"None","Bar Style":"Solid","Bar Color":"Purple"},"SendAdvancement":{"Toast Type":"Advancement"},"SetTabListInfo":{"Inherit Styles":"True","Text Value Merging":"No spaces","Player List Field":"Header"},"PlaySound":{"Sound Source":"Master"},"StopSound":{"Sound Source":"Master"},"PlaySoundSeq":{"Sound Source":"Master"},"PlayEntitySound":{"Ignore Formatting":"True","Sound Source":"Master"},"SetInvName":{"Alignment Mode":"Regular"},"AddInvRow":{"New Row Position":"Bottom row"},"RemoveInvRow":{"Row to Remove":"Bottom row"},"OpenSign":{"Sign Side":"Front"},"OpenTradeMenu":{"Ignore Formatting":"True"},"SetSidebar":{"Sidebar":"Enable"},"ScoreDefFormat":{"Number Format":"Fixed"},"ScoreLineFormat":{"Number Format":"Fixed"},"Damage":{"Ignore Formatting":"True"},"SetMaxHealth":{"Heal Player to Max Health":"False"},"GiveExp":{"Give Experience":"Points"},"SetExp":{"Set Experience":"Level"},"GivePotion":{"Show Icon":"True","Overwrite Effect":"True","Effect Particles":"Regular"},"SetFreezeTicks":{"Ticking Locked":"Disable"},"HealthAttribute":{"Attribute":"Maximum health","Value Type":"Direct"},"CombatAttribute":{"Attribute":"Attack damage","Value Type":"Direct"},"KBAttribute":{"Attribute":"Knockback resistance","Value Type":"Direct"},"MovementAttribute":{"Attribute":"Walking speed","Value Type":"Direct"},"FallingAttribute":{"Attribute":"Gravity","Value Type":"Direct"},"MiningAttribute":{"Attribute":"Block break speed","Value Type":"Direct"},"ReachAttribute":{"Attribute":"Block interaction range","Value Type":"Direct"},"MiscAttribute":{"Attribute":"Scale","Value Type":"Direct"},"SetAllowFlight":{"Allow Flight":"Enable"},"SetAllowPVP":{"PVP":"Disable"},"SetDropsEnabled":{"Spawn Death Drops":"Enable"},"SetInventoryKept":{"Inventory Kept":"Enable"},"SetCollidable":{"Collision":"Disable"},"InstantRespawn":{"Instant Respawn":"Enable"},"SetReducedDebug":{"Reduced Debug Info Enabled":"Enable"},"SetHandCrafting":{"Allow Hand Crafting":"Disable"},"Teleport":{"Keep Velocity":"False","Keep Current Rotation":"False"},"LaunchUp":{"Add to Current Velocity":"True"},"LaunchFwd":{"Add to Current Velocity":"True","Launch Axis":"Pitch and Yaw"},"LaunchToward":{"Add to Current Velocity":"True","Ignore Distance":"False"},"RideEntity":{"Ignore Formatting":"True"},"SetFlying":{"Flying":"Enable"},"SetGliding":{"Gliding":"Enable"},"SetVelocity":{"Add to Current Velocity":"False"},"SpectateTarget":{"Ignore Formatting":"True"},"SpectatorCollision":{"Spectator Collision":"Enable"},"SetPlayerWeather":{"Weather":"Downfall"},"DisplayFracture":{"Overwrite Previous Fracture":"True"},"DisplayBlockOpen":{"Container State":"Open"},"DisplayBellRing":{"Ring Direction":"North"},"DisplayGateway":{"Animation Type":"Initial beam"},"DisplaySignText":{"Sign Side":"Front","Text Color":"Black","Glowing":"Disable"},"DisplayPickup":{"Ignore Formatting":"True"},"SetEntityHidden":{"Ignore Formatting":"True","Hidden":"Enable"},"ParticleCuboid":{"Fill Type":"Wireframe"},"ParticleCuboidA":{"Fill Type":"Wireframe"},"Mimic":{"Remove Original Entity":"Enable"},"SetDisguiseVisible":{"Disguise Visible":"Disable"},"LockDisgRotation":{"Pitch":"No Change","Yaw":"No Change"},"SetNameColor":{"Name Color":"Black"},"SetNameVisible":{"Name Tag Visible":"Disable"},"SetNamePrefix":{"Text Type":"Prefix"},"SetVisualFire":{"On Fire":"Enable"},"AttackAnimation":{"Animation Arm":"Swing main arm"},"SetShoulder":{"Type":"Remove","Shoulder":"Left"}},"if_entity":{"NameEquals":{"Ignore Formatting":"True"},"IsNear":{"Shape":"Sphere"},"IsHitboxNear":{"Shape":"Sphere"},"IsRiding":{"Ignore Formatting":"True"},"HasPotion":{"Check Properties":"None","Check Mode":"Has any effect"}},"entity_action":{"SetMaxHealth":{"Heal Mob to Max Health":"False"},"Damage":{"Ignore Formatting":"True"},"SetFreezeTicks":{"Ticking Locked":"Disable"},"GivePotion":{"Overwrite Effect":"True","Effect Particles":"Regular"},"SetAge":{"Age Lock":"Don't change"},"SetWardenAnger":{"Ignore Formatting":"True"},"HealthAttribute":{"Attribute":"Maximum health","Value Type":"Direct"},"CombatAttribute":{"Attribute":"Attack damage","Value Type":"Direct"},"KBAttribute":{"Attribute":"Knockback resistance","Value Type":"Direct"},"MovementAttribute":{"Attribute":"Walking speed","Value Type":"Direct"},"FallingAttribute":{"Attribute":"Gravity","Value Type":"Direct"},"MiscAttribute":{"Attribute":"Scale","Value Type":"Direct"},"Mimic":{"Remove Original Entity":"Enable"},"LockDisgRotation":{"Pitch":"No Change","Yaw":"No Change"},"SetGlowing":{"Glowing":"Enable"},"SetDyeColor":{"Dye":"White"},"SetTemperature":{"Temperature Type":"Temperate"},"SetFishPattern":{"Pattern Color":"White","Body Color":"White","Pattern":"Kob"},"SetVillagerBiome":{"Biome":"Desert"},"SetRabbitType":{"Skin Type":"Brown"},"SetCatType":{"Skin Type":"Tabby"},"MooshroomType":{"Mooshroom Variant":"Red"},"SetFoxType":{"Fox Type":"Red"},"SetParrotColor":{"Parrot Color":"Red"},"SetHorsePattern":{"Horse Color":"Flaxen chestnut","Horse Markings":"Stockings and blaze"},"SetAxolotlColor":{"Axolotl Color":"Pink"},"SetLlamaColor":{"Llama Color":"Brown"},"SetWolfType":{"Wolf Type":"Ashen"},"SetWolfSoundType":{"Wolf Sound Type":"Angry"},"SetSalmonType":{"Salmon Type":"Medium"},"SnowmanPumpkin":{"Pumpkin":"Disable"},"ArmorStandParts":{"Arms":"Enable","Base Plate":"Enable"},"SetBeeNectar":{"Has Nectar":"Enable"},"SetVisualFire":{"On Fire":"True"},"SendAnimation":{"Animation Type":"Hurt animation"},"AttackAnimation":{"Animation Arm":"Swing main arm"},"ArmorStandPose":{"Armor Stand Part":"Head"},"SetPose":{"Pose":"Standing"},"SetFoxLeaping":{"Leaping":"Enable"},"SetArmsRaised":{"Arms Raised":"Enable"},"SetCatResting":{"Resting":"Enable"},"SetShulkerPeek":{"Is Silent":"Enable"},"Teleport":{"Keep Current Rotation":"False"},"LaunchUp":{"Add to Current Velocity":"True"},"LaunchFwd":{"Add to Current Velocity":"True","Launch Axis":"Pitch and Yaw"},"LaunchToward":{"Add to Current Velocity":"True","Ignore Distance":"False"},"SetGliding":{"Gliding":"Enable"},"SetGravity":{"Gravity":"Disable"},"RideEntity":{"Ignore Formatting":"True"},"AttachLead":{"Ignore Formatting":"True"},"FaceLocation":{"Face Direction":"Toward location"},"SetVelocity":{"Add to Current Velocity":"False"},"SetFriction":{"Friction Type":"No Friction"},"SetName":{"Name Tag Visibility":"Always"},"SetNameVisible":{"Name Tag Visibility":"Always"},"SetNameColor":{"Name Color":"Black"},"SetAI":{"AI":"None"},"SetSilenced":{"Silenced":"Enable"},"SetDeathDrops":{"Has Death Drops":"Enable"},"SetCollidable":{"Collision":"Disable"},"SetInvulnerable":{"Invulnerable":"Enable"},"SetMobSitting":{"Is Sitting":"Enable"},"SetBaby":{"Baby":"Enable"},"SetSaddle":{"Saddle":"Enable"},"SetCarryingChest":{"Carrying Chest":"Enable"},"ArmorStandSlots":{"Interactions":"Take, swap or place item","Equipment Slot":"All"},"SetMarker":{"Marker":"Enable"},"SetAngry":{"Angry":"Enable"},"SetRearing":{"Rearing":"Enable"},"SetRiptiding":{"Riptiding":"Enable"},"CreeperCharged":{"Charged":"Enable"},"SetInvisible":{"Invisible":"Enable"},"SetGoatScreaming":{"Screams":"Enable"},"SetGoatHorns":{"Left Horn":"No Change","Right Horn":"No Change"},"MannequinLayers":{"Hat Layer":"Visible","Right Pants Layer":"Visible","Left Pants Layer":"Visible","Right Sleeve Layer":"Visible","Left Sleeve Layer":"Visible","Jacket Layer":"Visible","Cape Layer":"Visible"},"MannequinHand":{"Main Hand":"Left Hand"},"MannequinMovable":{"Movable":"Enable"},"SetProfession":{"Retain Trades":"False","Profession":"Armorer"},"SetPandaGene":{"Set Gene":"Both","Gene Type":"Aggressive"},"SetPandaOnBack":{"On Its Back":"Enable"},"SetProjSource":{"Ignore Formatting":"True"},"SetPersistent":{"Persistent":"Enable"},"InteractResponse":{"Responsive":"Enable"},"SetBeeStinger":{"Has Stinger":"Enable"},"SetArrowNoClip":{"Has NoClip":"Enable"},"SetOxidization":{"Oxidization":"Unaffected"},"SetWaxed":{"Waxed":"True"},"SetCelebrating":{"Celebrate":"Enable"},"SetTarget":{"Ignore Formatting":"True"},"Ram":{"Ignore Formatting":"True"},"FrogEat":{"Ignore Formatting":"True"},"FoxSleeping":{"Sleeping":"Enable"},"SetDragonPhase":{"Phase":"Flying"},"SetBulletTarget":{"Ignore Formatting":"True"},"UseItem":{"Hand":"Main Hand","Use Item":"Enable"},"SetAllayDancing":{"Dancing":"Enable"},"SetVexCharging":{"Charging":"Enable"},"SnifferState":{"Behavior":"Idle"},"SetPandaRolling":{"Roll Type":"Roll"},"DisplayBillboard":{"Billboard Type":"Fixed"},"TDisplayText":{"Inherit Styles":"True","Text Value Merging":"No spaces"},"TDisplayAlign":{"Text Alignment":"Center"},"TDisplayShadow":{"Text Shadow":"Enable"},"TDisplaySeeThru":{"See-through":"Enable"},"IDisplayModelType":{"Model Type":"None"},"DispRotationEuler":{"Rotation Type":"Left Rotation"},"DispRotAxisAngle":{"Rotation Type":"Left Rotation"},"SetEquipment":{"Equipment Slot":"Main hand"},"SetDigging":{"Digging Type":"Emerge"}},"set_var":{"PurgeVars":{"Match Requirement":"Full word(s) in name","Ignore Case":"False"},"/":{"Division Mode":"Default"},"%":{"Remainder Mode":"Remainder"},"RandomNumber":{"Rounding Mode":"Whole number"},"RoundNumber":{"Round Mode":"Nearest"},"Interpolate":{"Easing":"Linear","Direction":"In"},"NormalRandom":{"Distribution":"Normal"},"Sine":{"Sine Variant":"Sine","Input":"Degrees"},"Cosine":{"Cosine Variant":"Cosine","Input":"Degrees"},"Tangent":{"Tangent Variant":"Tangent","Input":"Degrees"},"ArcTangent2":{"Output Type":"Degrees"},"Noise":{"Dimensions":"3D","Return Type":"Simplex"},"GradientNoise":{"Dimensions":"3D","Domain Fractal":"Progressive","Return Type":"Simplex"},"CellularNoise":{"Dimensions":"3D","Domain Fractal":"Progressive","Distance Calculation":"Euclidean","Return Type":"Voronoi"},"ValueNoise":{"Dimensions":"3D","Domain Fractal":"Progressive","Return Type":"Value"},"Bitwise":{"Bit Precision":"Default","Operator":"|"},"String":{"Text Value Merging":"No spaces"},"ReplaceString":{"Replacement Type":"All occurrences","Regular Expressions":"Disable"},"RemoveString":{"Regular Expressions":"Disable"},"SplitString":{"Strip Spaces":"Enable"},"SetCase":{"Capitalization Type":"UPPERCASE"},"IndexOfSubstring":{"Ignore Case":"False","Search Type":"First occurrence"},"FormatTime":{"Format":"2020/08/17 17:20:54"},"TranslateColors":{"Translation Type":"From & to color"},"AllRegexMatches":{"Return Type":"Full Match"},"BytesToString":{"Charset":"UTF-8","Signed":"True"},"StringToBytes":{"Charset":"UTF-8","Signed":"True"},"Base64Decode":{"Signed":"True"},"GzipDecompress":{"Signed":"True"},"StyledText":{"Inherit Styles":"True","Text Value Merging":"No spaces"},"ParseMiniMessage":{"Parse Legacy Color Codes":"False","Allowed Tags":"Style Only"},"GetCoord":{"Coordinate Type":"Plot coordinate","Coordinate":"X"},"SetCoord":{"Coordinate Type":"Plot coordinate","Coordinate":"X"},"SetAllCoords":{"Coordinate Type":"Plot coordinate"},"ShiftOnAxis":{"Coordinate":"X"},"ShiftInDirection":{"Direction":"Forward"},"ShiftOnVector":{"Add Location Rotation":"False"},"ShiftRotation":{"Rotation Axis":"Pitch"},"FaceLocation":{"Face Direction":"Toward location"},"AlignLoc":{"Rotation":"Keep rotation","Coordinates":"All coordinates","Alignment Mode":"Block center"},"Distance":{"Distance Type":"Distance 3D (X/Y/Z)"},"ClampLoc":{"Coordinates":"All coordinates"},"GetItemType":{"Return Value Type":"Item ID (golden_apple)"},"GetItemDura":{"Durability Type":"Get Damage"},"SetItemDura":{"Durability Type":"Set Damage"},"SetBreakability":{"Breakability":"Unbreakable"},"GetHeadOwner":{"Text Value":"Owner Name"},"SetHeadTexture":{"Code Flow":"Synchronous"},"GetModelDataNums":{"Model Value Type":"Floats"},"SetModelDataNums":{"Model Value Type":"Floats"},"HiddenComponents":{"Hiding Mode":"Hide all"},"SetItemRarity":{"Rarity":"Default for item type"},"SetLodestoneLoc":{"Require Lodestone at Location":"False"},"SetArmorTrim":{"Trim Pattern":"None","Trim Material":"Amethyst"},"GetConsumable":{"Consumable Property":"Nutrition"},"SetConsumable":{"Consuming Animation":"Eat","Show Particles":"True","Can Always Eat":"False"},"AddItemToolRule":{"Correct Tool for Loot":"True"},"GetItemWeapon":{"Weapon Property":"Durability reduction per attack"},"SetItemHideTooltip":{"Tooltip":"Enable"},"SetItemGlowing":{"Glowing":"Enable"},"GetAllItems":{"Include Blocks":"True","Include Items":"True"},"GetItemAttribute":{"Attribute":"Armor","Active Equipment Slot":"Any"},"AddItemAttribute":{"Attribute":"Armor","Operation":"Add number","Active Equipment Slot":"Main hand"},"RemoveItemAttrs":{"Slot":"All","Attribute":"All"},"GetBlockByMCTag":{"Return Value Type":"Material ID (golden_apple)"},"GetItemByMCTag":{"Return Value Tyep":"Material ID (golden_apple)"},"GetValueIndex":{"Search Order":"Ascending (first index)"},"RemoveListValue":{"Items to remove":"All Matches"},"SortList":{"Sort Order":"Ascending"},"SortDict":{"Sorting Type":"Sort by Key","Sorting Order":"Ascending"},"GetBlockType":{"Return Value Type":"Block ID (oak_log)"},"GetAllBlockData":{"Hide Default":"True"},"GetBlockGrowth":{"Growth Unit":"Growth stage number"},"GetLight":{"Light Type":"Combined light"},"GetSignText":{"Sign Side":"Front","Sign Line":"1"},"GetContainerItems":{"Ignore Empty Slots":"False"},"Raycast":{"Entity Collision":"False","Block Collision":"All blocks"},"GetBlockSound":{"Sound Type":"Break Sound"},"GetParticleSprd":{"Spread":"Horizontal"},"GetVectorComp":{"Component":"X"},"SetVectorComp":{"Component":"X"},"GetVectorLength":{"Length Type":"Length"},"RotateAroundAxis":{"Axis":"X","Angle Units":"Degrees"},"RotateAroundVec":{"Angle Units":"Degrees"},"SwapVectorComp":{"Components to Swap":"X \u21c4 Y"},"GetSoundPitch":{"Return Value Type":"Pitch (number)"},"GetColorChannels":{"Color Channels":"RGB"},"WebResponse":{"Code Flow":"Synchronous","Request Method":"Post","Content Type":"text/plain"}},"if_var":{"InRange":{"Location Handling":"Exact"},"LocIsNear":{"Shape":"Sphere"},"StringMatches":{"Ignore Case":"False","Regular Expressions":"Disable"},"Contains":{"Ignore Case":"False"},"StartsWith":{"Ignore Case":"False"},"EndsWith":{"Ignore Case":"False"},"IsFiltered":{"Character Drag Filter":"True","Character Spacing Filter":"True","Caps Filter":"True","Swear Filter":"True","Link Filter":"True"},"VarIsType":{"Variable Type":"Number"},"ItemEquals":{"Comparison Mode":"Exactly equals"},"ListContains":{"Check Mode":"Has Any Value"},"DictHasKeys":{"Check Mode":"Has Any Key"}},"game_action":{"SpawnItem":{"Apply Item Motion":"True"},"Firework":{"Instant":"False","Movement":"Upwards"},"FallingBlock":{"Reform on Impact":"True","Hurt Hit Entities":"False"},"SpawnArmorStand":{"Visibility":"Visible"},"SpawnCrystal":{"Show Bottom":"True"},"SpawnEnderEye":{"End of Lifespan":"Random"},"SpawnMannequin":{"Main Hand":"Left Hand","Movable":"True"},"SpawnTextDisplay":{"Inherit Styles":"True","Text Value Merging":"No spaces"},"CloneRegion":{"Ignore Air":"False","Clone Block Entities":"True"},"SetBlockData":{"Overwrite Existing Data":"False"},"BoneMeal":{"Show Particles":"True"},"GenerateTree":{"Tree Type":"Oak Tree"},"SetBlockGrowth":{"Growth Unit":"Growth Stage Number"},"ChangeSign":{"Sign Side":"Front"},"SignColor":{"Sign Side":"Front","Text Color":"Black","Glowing":"Disable"},"SetCampfireItem":{"Campfire Slot":"1"},"WebRequest":{"Request Method":"Post","Content Type":"text/plain"}},"if_game":{"BlockPowered":{"Redstone Power Mode":"Direct power"},"HasRoomForItem":{"Check Mode":"Has Room for Any Item"},"SignHasTxt":{"Check Mode":"Contains","Sign Side":"Front","Sign Line":"All lines"},"HasEntitiesName":{"Check Mode":"Has All Entities"},"HasEntitiesUUID":{"Check Mode":"Has All Entities"},"EventItemEquals":{"Comparison Mode":"Ignore stack size/durability"},"CommandEquals":{"Ignore Case":"True","Check Mode":"Check entire command"},"CmdArgEquals":{"Ignore Case":"True"},"MovementKey":{"Movement Key":"Forward (W)","Action":"Just pressed"}},"control":{"Wait":{"Time Unit":"Ticks"},"EndAllThreads":{"End Current Thread":"True"},"PrintDebug":{"Permission":"Developer","Text Value Merging":"Add Spaces","Highlighting":"None","Sound":"Default","Message Style":"Debug"}},"select_obj":{"EventTarget":{"Event Target":"Default"},"EntityName":{"Ignore Formatting":"True"},"FilterDistance":{"Ignore Y-Axis":"False","Compare Mode":"Nearest"},"FilterSort":{"Sort Order":"Ascending"},"FilterRay":{"Block Collision":"Solid blocks"}},"repeat":{"ForEach":{"Allow List Changes":"True"},"Adjacent":{"Change Location Rotation":"False","Include Origin Block":"False","Pattern":"Adjacent (6 blocks)"},"Path":{"Rotate Location":"False"},"Sphere":{"Point Locations Inwards":"False"}}};
+const VALIDCODEBLOCKS = ["game_event","entity_event","event","func","process","if_player","if_entity","if_var","if_game","player_action","entity_action","game_action","call_func","start_process","set_var","control","select_obj","repeat","else"];
+const DEFINITIONBLOCKS = ["game_event","entity_event","event","func","process"];
+const INDENTCAUSING = ["game_event","entity_event","event","func","process","if_player","if_entity","if_var","if_game","repeat","else"];
+const PARAMVARTYPES = ["any","txt","comp","num","loc","vec","snd","part","pot","var","bucket_var","item","list","dict"];
+const VALIDTARGETS = ["Selection","Default","Killer","Damager","Shooter","Victim","AllPlayers","Projectile","AllEntities","AllMobs","LastEntity"]
+const NEEDSPACEFIX = ["SetName","SetNameVisible","SetPose","InRange","GetItemName","SetHeadTexture","GetSignText","GetItemLore","SetItemName","GetBookText","SetDirection","SetItemEnchants","SetItemFlags","GetItemEnchants","RoundNumber","SetItemLore","Range","SignHasTxt","RemoveBossBar","SetBossBar","SetInvName","SetAbsorption","IsRiding","StandingOn","SetBlock"];
+let LIMITLINEBLOCKS = 300;
+
+/* ====
+	Small utilities
+	==== */
+function shallowEqual(a, b) {
+	const aKeys = Object.keys(a);
+	const bKeys = Object.keys(b);
+	return aKeys.length === bKeys.length && aKeys.every(k => b[k] === a[k]);
+}
+
+function isUpperChar(ch) {
+	return typeof ch === "string" && ch.length === 1 && ch !== ch.toLowerCase() && ch === ch.toUpperCase();
+}
+
+function uint8ArrayToBase64(bytes) {
+	let binary = "";
+	const chunk = 0x8000;
+	for (let i = 0; i < bytes.length; i += chunk) {
+		binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+	}
+	return btoa(binary);
+}
+function base64ToUint8Array(b64) {
+	const binary = atob(b64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+	return bytes;
+}
+
+/* ====
+	template to code
+	==== */
+function decodeTemplatedata(codestring) {
+	const compressed = base64ToUint8Array(codestring);
+	const decompressed = pako.inflate(compressed);
+	const jsonText = new TextDecoder("utf-8").decode(decompressed);
+	const codeJson = JSON.parse(jsonText);
+	return codeJson.blocks;
+}
+
+function textifyItem(item) {
+	if (item.id === "txt") {
+		return item.data.name;
+	} else if (item.id === "comp") {
+		return { StyledText: item.data.name };
+	} else if (item.id === "num") {
+		const s = item.data.name;
+		if (s.includes("%")) return { Num: s };
+		return s.includes(".") ? parseFloat(s) : parseInt(s, 10);
+	} else if (item.id === "loc") {
+		const locdict = item.data.loc;
+		const loclist = [locdict.x, locdict.y, locdict.z];
+		if (locdict.pitch !== 0 || locdict.yaw !== 0) {
+			loclist.push(locdict.pitch, locdict.yaw);
+		}
+		return { Location: loclist };
+	} else if (item.id === "vec") {
+		return { Vector: [item.data.x, item.data.y, item.data.z] };
+	} else if (item.id === "snd") {
+		return { Sound: [item.data.sound, item.data.pitch, item.data.vol, ...('variant' in item.data ? [item.data.variant] : [])] };
+	} else if (item.id === "part") {
+		return { Particle: item.data };
+	} else if (item.id === "pot") {
+		return { Potion: [item.data.pot, item.data.dur, item.data.amp] };
+	} else if (item.id === "var") {
+		return item.data.scope + "@" + item.data.name;
+	} else if (item.id === "bucket_var") {
+		return { Bucket: item.data };
+	} else if (item.id === "g_val") {
+		const targetsuffix = ("target" in item.data) ? "." + item.data.target : "";
+		return item.id + "@" + item.data.type + targetsuffix;
+	} else if (item.id === "pn_el") {
+		const paramdata = item.data;
+		const pluralplus = paramdata.plural ? "+" : "";
+		const optionalstar = paramdata.optional ? "*" : "";
+		const typesuffix = paramdata.type !== "any" ? ":" + paramdata.type : "";
+		let defaultsuffix = "";
+		if ("default_value" in paramdata) {
+			let tempds = textifyItem(paramdata.default_value);
+			if (tempds !== null && typeof tempds === "object") {
+				tempds = JSON.stringify(tempds);
+			}
+			defaultsuffix = "=" + tempds;
+		}
+		return pluralplus + optionalstar + paramdata.name + typesuffix + defaultsuffix;
+	} else if (item.id === "item") {
+		let itemcleaned = item.data.item.replace(/"minecraft:([^"]+)"/g, "$1");
+		itemcleaned = itemcleaned.replace(/DF_NBT:\d+,?/g, "");
+		return { Item: itemcleaned };
+	} else {
+		return "???";
+	}
+}
+
+const spaceFixer = txt => NEEDSPACEFIX.includes(txt.trim()) ? txt.trim() : txt;
+
+function blockToLine(block) {
+	const sl1 = block.block;
+	let sl2 = "", sl2clean = "", sl3 = "", contents = "", tags = "";
+
+	if ("action" in block) {
+		const negatesuffix = (("attribute" in block) && !("subAction" in block)) ? "!" : "";
+		sl2 = spaceFixer(block.action) + negatesuffix;
+		sl2clean = spaceFixer(block.action);
+	} else if ("data" in block) {
+		sl2 = block.data;
+		sl2clean = block.data;
+	}
+
+	if ("target" in block) {
+		sl3 = block.target;
+	} else if ("subAction" in block) {
+		const negatesuffix = ("attribute" in block) ? "!" : "";
+		sl3 = spaceFixer(block.subAction) + negatesuffix;
+	}
+
+	if ("args" in block && block.args && Array.isArray(block.args.items) && block.args.items.length) {
+		const itemsNormal = [];
+		const itemsTag = {};
+		for (const item of block.args.items) {
+			if (item.item.id === "bl_tag") {
+				if (item.item.data.tag !== "Is Hidden" || item.item.data.option !== "False") {
+					itemsTag[item.item.data.tag] = item.item.data.option;
+				}
+			} else if (item.item.id !== "hint") {
+				itemsNormal.push(textifyItem(item.item));
+			}
+		}
+		if (itemsNormal.length) {
+			contents = JSON.stringify(itemsNormal);
+		}
+		if (Object.keys(itemsTag).length) {
+			if (sl1 === "start_process" && shallowEqual(itemsTag, DEFAULTTAGS["start_process"])) {
+				// matches default — omit
+			} else if ((sl1 in DEFAULTTAGS) && DEFAULTTAGS[sl1] && (sl2clean in DEFAULTTAGS[sl1]) && shallowEqual(itemsTag, DEFAULTTAGS[sl1][sl2clean])) {
+				// matches default — omit
+			} else {
+				tags = JSON.stringify(itemsTag);
+			}
+		}
+	}
+	return `${sl1};${sl2};${sl3};${contents};${tags}`;
+}
+
+function blocksToCode(blocks) {
+	let indent = 0;
+	const codelines = [];
+	for (const block of blocks) {
+		if (block.id === "bracket") {
+			if (block.direct === "open") indent += 1;
+			else if (block.direct === "close") indent -= 1;
+		} else {
+			const line = blockToLine(block);
+			codelines.push("\t".repeat(Math.max(indent, 0)) + line);
+			if (["game_event", "entity_event", "event", "func", "process"].includes(block.block)) {
+				indent += 1;
+			}
+		}
+	}
+	return codelines;
+}
+
+/* ====
+	code to template
+	==== */
+function encodeTemplatedata(blocks) {
+	const codeBytes = new TextEncoder().encode(JSON.stringify({ blocks: blocks }));
+	let compressed = pako.gzip(codeBytes, { level: 6, header: { time: 0 } });
+	compressed = new Uint8Array(compressed);
+	compressed[4] = 0; compressed[5] = 0; compressed[6] = 0; compressed[7] = 0; // mtime = 0
+	compressed[8] = 0x00; // XFL
+	compressed[9] = 0xFF; // OS
+	const codeB64 = uint8ArrayToBase64(compressed);
+	return JSON.stringify(codeB64);
+}
+
+function parseItem(value, sl1) {
+	if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+		if ("StyledText" in value) return { id: "comp", data: { name: value.StyledText } };
+		if ("Location" in value) {
+			const loc = value.Location;
+			const x = loc[0], y = loc[1], z = loc[2];
+			const pitch = loc.length > 3 ? loc[3] : 0;
+			const yaw = loc.length > 3 ? loc[4] : 0;
+			if (![x, y, z, pitch, yaw].every(v => typeof v === "number")) {
+				throw new Error("Location values must be numbers (not variables)");
+			}
+			return { id: "loc", data: { isBlock: false, loc: { x, y, z, pitch, yaw } } };
+		}
+		if ("Vector" in value) {
+			const [x, y, z] = value.Vector;
+			return { id: "vec", data: { x, y, z } };
+		}
+		if ("Sound" in value) {
+			const [sound, pitch, vol, variant] = value.Sound;
+			return { id: "snd", data: { pitch, vol, sound, ...(variant ? { variant } : {}) } };
+		}
+		if ("Particle" in value) return { id: "part", data: value.Particle };
+		if ("Potion" in value) {
+			const [pot, dur, amp] = value.Potion;
+			return { id: "pot", data: { pot, dur, amp } };
+		}
+		if ("Bucket" in value) return { id: "bucket_var", data: value.Bucket };
+		if ("Item" in value) return { id: "item", data: { item: value.Item } };
+		if ("Num" in value) return { id: "num", data: { name: value.Num } };
+		throw new Error("List-contents JSON contains unknown dict object type");
+	}
+
+	if (typeof value === "number") {
+		return { id: "num", data: { name: String(value) } };
+	}
+
+	if (typeof value === "string") {
+		if (value.startsWith("g_val@")) {
+			const rest = value.slice("g_val@".length);
+			if (rest.includes(".")) {
+				if (rest.includes("%") || rest.includes("@")) {
+					throw new Error(`Hardcoded variable g_val@ got invalid target field`);
+				}
+				const idx = rest.indexOf(".");
+				if (!VALIDTARGETS.includes(rest.slice(idx + 1))) throw new Error("Invalid target type of g_val@")
+				return { id: "g_val", data: { type: rest.slice(0, idx), target: rest.slice(idx + 1) } };
+			}
+			return { id: "g_val", data: { type: rest } };
+		}
+
+		if (value.includes("@") && !value.startsWith("@") && value.indexOf("@") < 9) {
+			const idx = value.indexOf("@");
+			const scope = value.slice(0, idx);
+			const name = value.slice(idx + 1);
+			if (!["line", "local", "unsaved", "saved", "g_val"].includes(scope)) {
+				throw new Error(`Variable scope @ must be: line, local, unsaved, saved or g_val`);
+			}
+			if (name.includes("+") || name.includes("*") || name.includes("/")) {
+				throw new Error(`Variables cant contain inline math`);
+			}
+			return { id: "var", data: { name: name, scope: scope } };
+		}
+
+		if (sl1 === "func" || sl1 === "process") {
+			let v = value;
+			const plural = v.startsWith("+");
+			if (plural) v = v.slice(1);
+			const optional = v.startsWith("*");
+			if (optional) v = v.slice(1);
+
+			const eqIdx = v.indexOf("=");
+			if (!optional && eqIdx !== -1) {
+				throw new Error("Only optional (* prefix) params can have defaults (= suffix)");
+			}
+			const left = eqIdx === -1 ? v : v.slice(0, eqIdx);
+			const defaultRaw = eqIdx === -1 ? "" : v.slice(eqIdx + 1);
+
+			const colonIdx = left.indexOf(":");
+			const name = colonIdx === -1 ? left : left.slice(0, colonIdx);
+			const typ = colonIdx === -1 ? "any" : left.slice(colonIdx + 1);
+			if (!PARAMVARTYPES.includes(typ)) {
+				throw new Error(`Unknown param type: ${typ}`);
+			}
+
+			const data = { name: name, type: typ };
+			if (defaultRaw) {
+				let defaultVal;
+				try { defaultVal = JSON.parse(defaultRaw); } catch (e) { defaultVal = defaultRaw; }
+				data.default_value = parseItem(defaultVal, "nonexistent");
+			}
+			data.plural = plural;
+			data.optional = optional;
+			return { id: "pn_el", data: data };
+		}
+
+		return { id: "txt", data: { name: value } };
+	}
+
+	throw new Error(`Unsupported value type for parse_item: ${JSON.stringify(value)}`);
+}
+
+const LETTER_PREFIX_DICT = { E: "if_entity", V: "if_var", P: "if_player", G: "if_game" };
+
+function parseLine(line) {
+	if (line.split(";").length === 6 && line.endsWith(";")) {
+		line = line.slice(0, -1);
+	}
+	const parts = line.split(";");
+	if (parts.length !== 5) {
+		throw new Error("Every line must have four ;");
+	}
+	let [sl1, sl2, sl3, contents, tags] = parts;
+
+	if (!VALIDCODEBLOCKS.includes(sl1)) {
+		throw new Error(`Unknown codeblock type ${sl1}`);
+	}
+
+	if (contents) {
+		try { JSON.parse(contents); } catch (e) { throw new Error("Invalid list-contents JSON"); }
+		if (!Array.isArray(JSON.parse(contents))) throw new Error("List-contents JSON must be a list");
+	}
+	
+	let specifiedTags = {};
+	if (tags) {
+		try { specifiedTags = JSON.parse(tags); } catch (e) { throw new Error("Invalid dict-tags JSON"); }
+		if (Array.isArray(specifiedTags)) throw new Error("Dict-tags JSON must be a dictionary");
+	}
+
+	let negation = false;
+	let isWhile = sl1 === "repeat" && (sl2 === "While" || sl2 === "DoWhile")
+
+	if (sl2.endsWith("!")) { sl2 = sl2.slice(0, -1); negation = true; }
+	if (sl1 === "select_obj" || isWhile) {
+		if (sl3.endsWith("!")) { sl3 = sl3.slice(0, -1); negation = true; }
+	} else {
+		if (sl3 && !VALIDTARGETS.includes(sl3)) throw new Error("Invalid target type (field 3)")
+	}
+	
+	const defaultTags = sl1 === "start_process"
+		? DEFAULTTAGS["start_process"]
+		: DEFAULTTAGS[sl1]?.[sl2];
+	
+	if (defaultTags) {
+		const invalidKey = Object.keys(specifiedTags).find(key => !(key in defaultTags));
+		if (invalidKey) throw new Error(`${sl1};${sl2} cant have tag '${invalidKey}'`);
+		tags = JSON.stringify({ ...defaultTags, ...specifiedTags });
+	}
+
+	if (NEEDSPACEFIX.includes(sl3)) sl3 = " " + sl3 + " ";
+	if (NEEDSPACEFIX.includes(sl2)) sl2 = " " + sl2 + " ";
+
+	const block = { id: "block", block: sl1 };
+	const items = [];
+
+	if (contents) {
+		let itemslot = 0;
+		for (const value of JSON.parse(contents)) {
+			items.push({ item: parseItem(value, sl1), slot: itemslot });
+			itemslot++;
+		}
+	}
+
+	if (tags) {
+		const tagsObj = JSON.parse(tags);
+		let itemslot = 27 - Object.keys(tagsObj).length;
+		for (const [tagName, option] of Object.entries(tagsObj)) {
+			let blockfield = sl1;
+			let actionfield = ((sl1 === "select_obj" && (sl2 === "EntitiesCond" || sl2 === "PlayersCond")) || isWhile) ? sl3 : sl2;
+			if (sl1 === "start_process") actionfield = "dynamic";
+
+			if (sl1 === "select_obj" || isWhile) {
+				if (actionfield.length >= 2 && isUpperChar(actionfield[1]) && isUpperChar(actionfield[0])) {
+					if (!(actionfield[0] in LETTER_PREFIX_DICT)) {
+						throw new Error(`KeyError: '${actionfield[0]}'`);
+					}
+					blockfield = LETTER_PREFIX_DICT[actionfield[0]];
+				}
+				fixactionfield = spaceFixer(actionfield);
+				for (const search1 of ["if_var", "if_player", "if_entity", "if_game"]) {
+					const bucket = DEFAULTTAGS[search1] || {};
+					for (const searchsubblock of Object.keys(bucket)) {
+						if (searchsubblock === fixactionfield) blockfield = search1;
+					}
+				}
+			}
+
+			items.push({ item: { id: "bl_tag", data: { option: option, tag: tagName, action: actionfield, block: blockfield } }, slot: itemslot });
+			itemslot++;
+		}
+	}
+
+	if (sl1 === "func") {
+		items.push({ item: { id: "hint", data: { id: "function" } }, slot: 25 });
+	}
+	if ((sl1 === "func" || sl1 === "process") && !tags) {
+		items.push({ item: { id: "bl_tag", data: { option: "False", tag: "Is Hidden", action: "dynamic", block: sl1 } }, slot: 26 });
+	}
+
+	if (sl1 !== "else") {
+		block.args = { items: items };
+	}
+
+	if (sl2) {
+		if (["call_func", "func", "start_process", "process"].includes(sl1)) {
+			block.data = sl2;
+		} else {
+			block.action = sl2;
+		}
+	}
+
+	if (sl3) {
+		if (sl1 === "select_obj" || isWhile) {
+			block.subAction = sl3;
+		} else {
+			block.target = sl3;
+		}
+	}
+
+	if (negation) {
+		block.attribute = (sl1 === "event") ? "LS-CANCEL" : "NOT";
+	}
+
+	return block;
+}
+
+function codeToBlocks(codelines) {
+	const blocks = [];
+	let prevIndent = 0;
+	let prevBlockType = null;
+	const bracketStack = [];
+	let hadErrors = false;
+	const errors = [];
+
+	for (const rawLine of codelines) {
+		if (!rawLine.trim()) continue;
+
+		const normalized = rawLine.replace(/\t/g, "    ");
+		const stripped = normalized.replace(/^ +/, "");
+		const leading = normalized.length - stripped.length;
+		const indent = Math.floor(leading / 4);
+
+		if (indent > prevIndent) {
+			const diff = indent - prevIndent;
+			let emitDiff = diff;
+			if (DEFINITIONBLOCKS.includes(prevBlockType)) emitDiff -= 1;
+			if (!INDENTCAUSING.includes(prevBlockType)) {
+				hadErrors = true;
+				errors.push(`> Indent with invalid reason before line \`${stripped}\``);
+			}
+			const skip = diff - emitDiff;
+			const bracketType = prevBlockType === "repeat" ? "repeat" : "norm";
+			for (let i = 0; i < diff; i++) {
+				if (i >= skip) {
+					bracketStack.push(bracketType);
+					blocks.push({ id: "bracket", direct: "open", type: bracketType });
+				}
+			}
+		} else if (indent < prevIndent) {
+			const diff = prevIndent - indent;
+			for (let i = 0; i < diff; i++) {
+				const bt = bracketStack.length ? bracketStack.pop() : "norm";
+				blocks.push({ id: "bracket", direct: "close", type: bt });
+			}
+		} else if (INDENTCAUSING.includes(prevBlockType)) {
+			hadErrors = true;
+			errors.push(`> Missing indent at line \`${stripped}\` by \`${prevBlockType}\``);
+		}
+
+		let block;
+		try {
+			block = parseLine(stripped.trimEnd());
+		} catch (e) {
+			hadErrors = true;
+			errors.push(`> Error at line \`${stripped}\`: ${e.message}`);
+			continue;
+		}
+		blocks.push(block);
+
+		prevIndent = indent;
+		prevBlockType = block.block;
+		if (indent === 0 && !DEFINITIONBLOCKS.includes(prevBlockType)) {
+			hadErrors = true;
+			errors.push(`> Cant have zero-indent level at line \`${stripped}\` by \`${prevBlockType}\``);
+		}
+	}
+
+	if (hadErrors) return { blocks: [], errors: errors };
+
+	while (bracketStack.length) {
+		blocks.push({ id: "bracket", direct: "close", type: bracketStack.pop() });
+	}
+
+	return { blocks: blocks, errors: [] };
+}
+
+/* ====
+	text code reading
+	==== */
+function textToMulticodelines(text) {
+	const multicodelines = [];
+	let codelines = [];
+	const lines = text.split(/\r\n|\r|\n/);
+	for (const line of lines) {
+		const stripped = line.replace(/^[ \t]+/, "");
+		if (!stripped || stripped.startsWith("#")) continue;
+		if (line.length > 0 && /[A-Za-z]/.test(line[0])) {
+			if (codelines.length) multicodelines.push(codelines);
+			codelines = [];
+		}
+		codelines.push(line);
+	}
+	if (codelines.length) multicodelines.push(codelines);
+	return multicodelines;
+}
+
+function multicodelinesToBundle(multicodelines) {
+	const enderlist = [];
+	let hadErrors = false;
+	const allErrors = [];
+	
+	for (const codelines of multicodelines) {
+		const { blocks: reconstrBlocks, errors } = codeToBlocks(codelines);
+		if (!reconstrBlocks.length) {
+			hadErrors = true;
+			allErrors.push(...errors);
+			continue;
+		}
+		try {
+			const newtemplate = encodeTemplatedata(reconstrBlocks);
+			const templength = reconstrBlocks.filter(b => !(b.id === "bracket" && b.direct === "close")).length;
+
+			let quicktitle;
+			if ("data" in reconstrBlocks[0]) quicktitle = reconstrBlocks[0].data;
+			else if ("action" in reconstrBlocks[0]) quicktitle = reconstrBlocks[0].action;
+			else throw new Error("first block has neither 'data' nor 'action'");
+
+			if (templength * 2 > LIMITLINEBLOCKS) {
+				hadErrors = true;
+				allErrors.push(`Event/function/process "${quicktitle}" is too long (need ${LIMITLINEBLOCKS/2-templength} lines)`);
+				continue;
+			}
+
+			const itemname = `(${templength * 2}) ${reconstrBlocks[0].block} \u00bb ${quicktitle}`;
+			const endernbt = '{components:{custom_data:{PublicBukkitValues:{"hypercube:codetemplatedata":\'{"author":"AI","name":"' + itemname + '","version":1,"code":' + newtemplate + '}\'}},custom_name:{text:"' + itemname + '"}},count:1,id:ender_chest}';
+			enderlist.push(endernbt);
+		} catch (e) {
+			hadErrors = true;
+			allErrors.push(`Error building bundle item: ${e.message}`);
+		}
+	}
+
+	if (hadErrors) return { error: true, errors: allErrors };
+
+	const bundlecmd = `give @a cyan_bundle[bundle_contents=[${enderlist.join(",")}]]`;
+	return { error: false, bundlecmd: bundlecmd };
+}
+
+/* ====
+	Bundle → text (reverse of multicodelines_to_bundle)
+	==== */
+function bundleToText(bundleStr) {
+	if (bundleStr.startsWith("H4")) {
+		try {
+			const blocks = decodeTemplatedata(bundleStr);
+			return { text: blocksToCode(blocks).join("\n"), errors: [] };
+		} catch (e) {
+			return { text: "", errors: [`Error decoding string template: ${e.message}`] };
+		}
+	}
+	if (bundleStr.startsWith('\'{"') && !bundleStr.includes("codetemplatedata")) {
+		bundleStr = '"hypercube:codetemplatedata":'+bundleStr+'}}'
+	}
+	
+	const regex = /"hypercube:codetemplatedata":'(\{.*?\})'\}\}/gs;
+	const chunks = [];
+	const errors = [];
+	let count = 0;
+	let match;
+	while ((match = regex.exec(bundleStr)) !== null) {
+		count++;
+		try {
+			const parsed = JSON.parse(match[1]);
+			if (!("code" in parsed)) throw new Error(`missing "code" field`);
+			const blocks = decodeTemplatedata(parsed.code);
+			const codelines = blocksToCode(blocks);
+			chunks.push(codelines.join("\n"));
+		} catch (e) {
+			errors.push(`> Error decoding item ${count}: ${e.message}`);
+		}
+	}
+	if (count === 0) {
+		errors.push("No codetemplatedata items found in input.");
+	}
+	return { text: chunks.join("\n\n"), errors: errors };
+}
+
+/* ====
+	UI wiring
+	==== */
+CodeMirror.defineMode("signdsl", function() {
+	return {
+		startState() {
+			return { field: 0 };
+		},
+
+		token(stream, state) {
+			if (stream.sol()) {
+				state.field = 0;
+			}
+
+			if (stream.peek() === ";") {
+				stream.next();
+				state.field++;
+				return "separator";
+			}
+
+			while (!stream.eol() && stream.peek() !== ";") {
+				stream.next();
+			}
+
+			switch (state.field) {
+				case 0: return "block";
+				case 1: return "action";
+				case 2: return "target";
+				case 3: return "contents";
+				case 4: return "tags";
+				default: return null;
+			}
+		}
+	};
+});
+CodeMirror.registerHelper("hint", "signdsl", function(cm) {
+	const cursor = cm.getCursor();
+	const line = cm.getLine(cursor.line);
+	const semiIdx = line.indexOf(";");
+	const leadingLen = line.match(/^[\t ]*/)[0].length;
+	
+	const semis = (line.match(/;/g) || []).length;
+	if (semis === 4 && cursor.ch === line.length && line.endsWith(";")) {
+		const [command, subcommand] = line.slice(leadingLen).split(";");
+		const tags = DEFAULTTAGS[command]?.[subcommand];
+		if (tags) {
+			return {
+				list: [JSON.stringify(tags)],
+				from: CodeMirror.Pos(cursor.line, cursor.ch),
+				to: CodeMirror.Pos(cursor.line, cursor.ch)
+			};
+		}
+	}
+	
+	let fieldStart = leadingLen;
+	let fieldEnd = semiIdx === -1 ? line.length : semiIdx;
+	let completions = VALIDCODEBLOCKS;
+	
+	if (semiIdx !== -1 && cursor.ch > semiIdx) {
+		const block = line.slice(leadingLen, semiIdx).trim();
+		completions = SUBCOMMANDBLOCKS[block];
+		if (!completions) return null;
+
+		fieldStart = semiIdx + 1;
+		fieldEnd = line.length;
+	}
+
+	if (cursor.ch < fieldStart || cursor.ch > fieldEnd) return null;
+
+	const word = line.slice(fieldStart, cursor.ch);
+	const list = completions.filter(w => w.startsWith(word));
+	if (!list.length) return null;
+
+	return {
+		list,
+		from: CodeMirror.Pos(cursor.line, fieldStart),
+		to: CodeMirror.Pos(cursor.line, fieldEnd)
+	};
+});
+const codeMirror = CodeMirror.fromTextArea(
+	document.getElementById("codeInput"),
+	{
+		theme: "dracula",
+		lineNumbers: true,
+		tabSize: 4,
+		indentUnit: 4,
+		indentWithTabs: true,
+		gutters: [
+			"CodeMirror-linenumbers",
+			"error-gutter"
+		],
+		extraKeys: {
+			"Shift-Tab": "indentLess",
+			"Tab": "indentMore",
+			"Ctrl-F": "findPersistent",
+			"Cmd-F": "findPersistent" 
+		}
+	}
+);
+document.fonts.ready.then(() => codeMirror.refresh());
+const bundleOutput = document.getElementById("bundleOutput");
+const codeLog = document.getElementById("codeLog");
+const bundleLog = document.getElementById("bundleLog");
+
+const tooltip = document.getElementById("tooltip");
+
+function showTooltip(msg, x, y) {
+	tooltip.textContent = msg;
+	tooltip.style.display = "block";
+	tooltip.style.left = (x + 12) + "px";
+	tooltip.style.top = (y + 12) + "px";
+}
+
+function hideTooltip() {
+	tooltip.style.display = "none";
+}
+
+let errorLines = [];
+
+function clearErrorLines() {
+	for (const line of errorLines)
+		codeMirror.removeLineClass(line, "background", "cm-error-line");
+	errorLines = [];
+	codeMirror.clearGutter("error-gutter");
+	hideTooltip();
+}
+
+function markErrorLine(i, message) {
+	codeMirror.addLineClass(i, "background", "cm-error-line");
+	errorLines.push(i);
+
+	const marker = document.createElement("div");
+	marker.className = "error-marker";
+	marker.textContent = "⚠";
+	marker.addEventListener("mouseenter", (ev) => {
+		showTooltip(message, ev.clientX, ev.clientY);
+	});
+	marker.addEventListener("mousemove", (ev) => {
+		tooltip.style.left = (ev.clientX + 12) + "px";
+		tooltip.style.top = (ev.clientY + 12) + "px";
+	});
+	marker.addEventListener("mouseleave", hideTooltip);
+
+	codeMirror.setGutterMarker(i, "error-gutter", marker);
+}
+
+function scanCode() {
+	clearErrorLines();
+	const lines = codeMirror.getValue().split(/\r?\n/);
+	const definedNames = new Set();
+	const funcNames = new Set();
+	const processNames = new Set();
+
+	lines.forEach((line, i) => {
+		const stripped = line.replace(/^[ \t]+/, "");
+
+		if (!stripped) return;
+		if (stripped.startsWith("#")) return;
+
+		try {
+			parseLine(stripped.trimEnd());
+		} catch (e) {
+			markErrorLine(i, e.message);
+			return;
+		}
+		const parts = stripped.trimEnd().split(";");
+		const blockType = parts[0];
+		if (DEFINITIONBLOCKS.includes(blockType)) {
+			const key = blockType + ";" + parts[1];
+			if (definedNames.has(key)) {
+				markErrorLine(i, `Duplicate definition of ${parts[1]}`);
+				return;
+			}
+			definedNames.add(key);
+			if (blockType === "func" && parts[1]) funcNames.add(parts[1]);
+			if (blockType === "process" && parts[1]) processNames.add(parts[1]);
+		}
+	});
+	SUBCOMMANDBLOCKS["call_func"] = [...funcNames];
+	SUBCOMMANDBLOCKS["start_process"] = [...processNames];
+}
+
+
+function logTo(el, lines) {
+	el.innerHTML = "";
+	if (!lines.length) { el.classList.remove("show"); return; }
+	el.classList.add("show");
+	for (const { text, kind } of lines) {
+		const div = document.createElement("div");
+		div.className = "line " + (kind || "info");
+		div.textContent = text;
+		el.appendChild(div);
+	}
+	el.scrollTop = el.scrollHeight;
+}
+
+document.getElementById("toBundleBtn").addEventListener("click", () => {
+	const btn = document.getElementById("toBundleBtn");
+	btn.classList.add("busy");
+	setTimeout(() => {
+		try {
+			const multicodelines = textToMulticodelines(codeMirror.getValue());
+			if (!multicodelines.length) {
+				logTo(bundleLog, [{ text: "No code found — paste at least one block line (e.g. event;Join;;;).", kind: "err" }]);
+				btn.classList.remove("busy");
+				return;
+			}
+			const result = multicodelinesToBundle(multicodelines);
+			if (result.error) {
+				bundleOutput.value = "";
+				logTo(bundleLog, result.errors.map(t => ({ text: t, kind: "err" })));
+			} else {
+				bundleOutput.value = result.bundlecmd;
+				logTo(bundleLog, [{ text: `Built bundle with ${multicodelines.length} item${multicodelines.length === 1 ? "" : "s"}. (use singleplayer command block and creative saved hotbars)`, kind: "ok" }]);
+			}
+		} catch (e) {
+			logTo(bundleLog, [{ text: `Unexpected error: ${e.message}`, kind: "err" }]);
+		}
+		btn.classList.remove("busy");
+	}, 60);
+});
+
+document.getElementById("toCodeBtn").addEventListener("click", () => {
+	const btn = document.getElementById("toCodeBtn");
+	btn.classList.add("busy");
+	setTimeout(() => {
+	try {
+		const { text, errors } = bundleToText(bundleOutput.value);
+		const lines = errors.map(t => ({ text: t, kind: "err" }));
+		if (text) {
+			codeMirror.setValue(text);
+			scanCode();
+			lines.push({ text: `Decoded successfully.`, kind: "ok" });
+		}
+		logTo(codeLog, lines);
+	} catch (e) {
+		logTo(codeLog, [{ text: `Unexpected error: ${e.message}`, kind: "err" }]);
+	}
+	btn.classList.remove("busy");
+	}, 60);
+});
+
+document.getElementById("copyBundleBtn").addEventListener("click", () => {
+	navigator.clipboard.writeText(bundleOutput.value || "")
+		.then(() => {
+			logTo(codeLog, [{ text: "Copied to clipboard.", kind: "ok" }]);
+		})
+		.catch((e) => {
+			logTo(codeLog, [{ text: "Copy failed: " + e.message, kind: "err" }]);
+		});
+});
+
+document.getElementById("codeclientBtn").addEventListener("click", () => {
+	if (!bundleOutput.value.startsWith("give @a cyan_bundle[bundle_contents=")) {
+		logTo(codeLog, [{ text: "Can send only bundles", kind: "err" }]);
+		return
+	}
+	clientcommand = bundleOutput.value.replace(
+	  "give @a cyan_bundle[bundle_contents=",
+	  "give {Count:1,id:cyan_bundle,components:{bundle_contents:"
+	).slice(0, -1) + "}}";
+
+	const ws = new WebSocket('ws://localhost:31375');
+	ws.onopen = () => {
+		ws.send(clientcommand);
+		ws.onmessage = (event) => {logTo(codeLog, [{ text: event.data, kind: "info" }])};
+		ws.close();
+	}
+	ws.onerror = () => {
+		logTo(codeLog, [{ text: "Could not connect to CodeClient.", kind: "err" }]);
+	}
+});
+
+function downloadTextFile(text, filename) {
+	const blob = new Blob([text], { type: "text/plain" });
+	const url = URL.createObjectURL(blob);
+
+	const a = document.createElement("a");
+	a.href = url;
+	a.download = filename;
+	a.click();
+
+	URL.revokeObjectURL(url);
+}
+
+document.getElementById("downloadCodeBtn").addEventListener("click", () => {
+	downloadTextFile(codeMirror.getValue(), "exportcode.txt");
+});
+
+document.getElementById("aiPromptBtn").addEventListener("click", () => {
+	const compressed = base64ToUint8Array(PROMPTCOMPRESSED);
+	const decompressed = pako.inflate(compressed);
+	const text = new TextDecoder("utf-8").decode(decompressed);
+	downloadTextFile(text, "dsl_docs.txt");
+});
+
+document.getElementById("limitSizeSelect").addEventListener("change", (ev) => {
+    LIMITLINEBLOCKS = parseInt(ev.target.value, 10);
+});
+
+let scanTimer;
+
+codeMirror.on("change", () => {
+	clearTimeout(scanTimer);
+	scanTimer = setTimeout(scanCode, 150);
+});
+
+codeMirror.on("inputRead", function(cm, change) {
+	const cursor = cm.getCursor();
+	const line = cm.getLine(cursor.line);
+	const semiIdx = line.indexOf(";");
+	const leadingLen = line.match(/^[\t ]*/)[0].length;
+
+	let fieldStart = leadingLen;
+	let fieldEnd = semiIdx === -1 ? line.length : semiIdx;
+
+	if (semiIdx !== -1 && cursor.ch > semiIdx) {
+		const block = line.slice(leadingLen, semiIdx).trim();
+		if (!SUBCOMMANDBLOCKS[block]) return;
+
+		fieldStart = semiIdx + 1;
+		fieldEnd = line.length;
+	}
+
+	if (cursor.ch < fieldStart || cursor.ch > fieldEnd) return;
+	if (!change.text) return;
+
+	const ch = change.text[0];
+	if (!/[A-Za-z_]/.test(ch) && ch !== ";") return;
+
+	cm.showHint({ hint: CodeMirror.hint.signdsl, completeSingle: false });
+});
+
+</script>
+</body>
+</html>
