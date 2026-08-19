@@ -91,6 +91,7 @@
 		color:var(--diamond);
 		cursor:pointer;
 		font:inherit;
+		white-space:nowrap;
 	}
 	.flowbtn:hover{
 		background:rgba(85,214,238,.15);
@@ -224,7 +225,7 @@
 
 <header>
 	<div class="mark">
-		<span class="facet"></span>Unsigned DSL (Code ⇄ Template) v1.0.0
+		<span class="facet"></span>Unsigned DSL (Code ⇄ Template) v1.0.1
 		<button class="flowbtn" id="aiPromptBtn">AI prompt .txt</button>
 	</div>
 </header>
@@ -436,13 +437,19 @@ function blockToLine(block) {
 	if ("args" in block && block.args && Array.isArray(block.args.items) && block.args.items.length) {
 		const itemsNormal = [];
 		const itemsTag = {};
+		let currentSlot = 0;
 		for (const item of block.args.items) {
 			if (item.item.id === "bl_tag") {
 				if (item.item.data.tag !== "Is Hidden" || item.item.data.option !== "False") {
 					itemsTag[item.item.data.tag] = item.item.data.option;
 				}
 			} else if (item.item.id !== "hint") {
+				while (currentSlot < item.slot) {
+					itemsNormal.push(null);
+					currentSlot++;
+				}
 				itemsNormal.push(textifyItem(item.item));
+				currentSlot++;
 			}
 		}
 		if (itemsNormal.length) {
@@ -650,7 +657,7 @@ function parseLine(line) {
 	if (contents) {
 		let itemslot = 0;
 		for (const value of JSON.parse(contents)) {
-			items.push({ item: parseItem(value, sl1), slot: itemslot });
+			if (value != null) items.push({ item: parseItem(value, sl1), slot: itemslot });
 			itemslot++;
 		}
 	}
